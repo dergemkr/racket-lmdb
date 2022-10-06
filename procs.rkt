@@ -193,16 +193,26 @@
 ;; Returns boolean indicating if item was found or not.
 (deflmdb mdb_cursor_get
   (_fun _MDB_cursor-pointer
-        _MDB_val-pointer/null
-        _MDB_val-pointer/null
+        _MDB_val-pointer
+        _MDB_val-pointer
         _MDB_cursor_op
         -> _int)
   #:wrap (lambda (raw)
            (lambda (cursor key data op)
-             (define key-val (bytes->MDB_val/null (unbox key)))
-             (define data-val (bytes->MDB_val/null (unbox data)))
+             (define in-key (unbox key))
+             (define key-val
+               (if in-key
+                   (bytes->MDB_val in-key)
+                   (make-MDB_val 0 #f)))
              (define in-key-mv_data (MDB_val-mv_data key-val))
+
+             (define in-data (unbox data))
+             (define data-val
+               (if in-data
+                   (bytes->MDB_val in-data)
+                   (make-MDB_val 0 #f)))
              (define in-data-mv_data (MDB_val-mv_data data-val))
+
              (define status (raw cursor key-val data-val op))
              ;; Only update boxes if in/out args were touched.
              (unless (equal? in-key-mv_data (MDB_val-mv_data key-val))
