@@ -88,6 +88,14 @@
              (check-status s)
              x)))
 
+(deflmdb mdb_txn_env
+  (_fun _MDB_txn-pointer
+        -> _MDB_env-pointer))
+
+(deflmdb mdb_txn_id
+  (_fun _MDB_txn-pointer
+        -> _size))
+
 (deflmdb mdb_txn_commit
   (_fun _MDB_txn-pointer
         -> (s : _int)
@@ -183,6 +191,12 @@
 
 (deflmdb mdb_cursor_close
   (_fun _MDB_cursor-pointer -> _void))
+
+(deflmdb mdb_cursor_renew
+  (_fun _MDB_txn-pointer
+        _MDB_cursor-pointer
+        -> (s : _int)
+        -> (check-status s)))
 
 (deflmdb mdb_cursor_txn
   (_fun _MDB_cursor-pointer -> _MDB_txn-pointer))
