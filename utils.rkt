@@ -6,11 +6,6 @@
 
 (provide (all-defined-out))
 
-; TODO: Make sure we follow error string conventions
-(define (check-status s)
-  (unless (zero? s)
-    (raise (mdb_error "mdb_error" (current-continuation-marks) s))))
-
 (define (bytes->MDB_val b)
   ;; I could provide C wrapper procs that remove much of the need for data
   ;; copying performed by this proc taking the buffers and their sizes as

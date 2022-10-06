@@ -25,4 +25,4 @@
 (define MDB_BAD_VALSIZE -30781)
 (define MDB_BAD_DBI -30780)
 
-(struct mdb_error exn:fail (code))
+(struct exn:mdb exn:fail (code))

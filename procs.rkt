@@ -5,7 +5,15 @@
          "errors.rkt"
          "utils.rkt")
 
-(provide (all-defined-out))
+(provide (except-out (all-defined-out)
+                     check-status))
+
+; TODO: Make sure we follow error string conventions
+(define (check-status s)
+  (unless (zero? s)
+    (raise (exn:mdb (format "exn:mdb: ~a" (mdb_strerror s))
+                    (current-continuation-marks)
+                    s))))
 
 (deflmdb mdb_version
   (_fun
