@@ -19,3 +19,10 @@ This module is a direct port of the [LMDB API](http://www.lmdb.tech/doc), with t
   * Memory mapping, as used by LMDB, involves cache misses which block the entire OS thread.
     This means that the entire Racket place can be blocked, since Racket uses green threads.
     (i.e. Code in another Racket [thread](https://docs.racket-lang.org/reference/threads.html) can be blocked by LMDB operations if they are in the same [place](https://docs.racket-lang.org/reference/places.html)!
+
+## Bundled Libraries
+
+This package bundles LMDB dynamic libraries for various platforms which were sourced from these locations:
+
+* Windows 64-bit: https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-lmdb-0.9.29-1-any.pkg.tar.zst (MSYS2)
+* Linux 64-bit: https://mirror.pkgbuild.com/extra/os/x86_64/lmdb-0.9.29-1-x86_64.pkg.tar.zst (Arch Linux)

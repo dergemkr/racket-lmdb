@@ -1,11 +1,18 @@
 #lang racket/base
 
 (require ffi/unsafe
-         ffi/unsafe/define)
+         ffi/unsafe/define
+         racket/runtime-path)
 
 (provide (all-defined-out))
 
-(define-ffi-definer deflmdb (ffi-lib "lmdb"))
+;; Based on https://github.com/jbclements/RSound/blob/master/rsound/private/s16vector-add.rkt
+(define-runtime-path here "libs")
+
+(define-ffi-definer deflmdb (ffi-lib
+                             (build-path here
+                                         (system-library-subpath #f)
+                                         "lmdb")))
 
 (define _MDB_env-pointer (_cpointer 'MDB_env))
 (define _MDB_txn-pointer (_cpointer 'MDB_txn))
