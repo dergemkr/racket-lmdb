@@ -26,3 +26,8 @@ This package bundles LMDB dynamic libraries for various platforms which were sou
 
 * Windows 64-bit: https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-lmdb-0.9.29-1-any.pkg.tar.zst (MSYS2)
 * Linux 64-bit: https://mirror.pkgbuild.com/extra/os/x86_64/lmdb-0.9.29-1-x86_64.pkg.tar.zst (Arch Linux)
+
+## License
+
+LMDB is released under the OpenLDAP license, a copy of which is located at (libs/lmdb-license.txt).
+The wrapper itself is licensed under the MIT license, a copy of which is located at (LICENSE.txt).
