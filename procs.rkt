@@ -10,7 +10,21 @@
          "utils.rkt")
 
 (module+ test
-  (require rackunit))
+  (require racket/file
+           racket/function
+           rackunit)
+
+  (define-syntax-rule (with-env (env) body ...)
+    (let ([env (mdb_env_create)]
+          [path (make-temporary-directory "db~a")])
+      (mdb_env_open env path '() #o664)
+
+      body ...
+
+      ;; This will not happen if there's an exception in body, but it's not a
+      ;; problem since nobody else will use the env and we're unlikely to run out
+      ;; of resources in testing.
+      (mdb_env_close env))))
 
 (provide (except-out (all-defined-out)
                      check-status))
@@ -195,6 +209,24 @@
                    dbi
                    (bytes->MDB_val key)
                    (bytes->MDB_val/null val))))))
+
+(module+ test
+  (test-case "mdb_get/put/del"
+    (with-env (e)
+      (define (exn:mdb-notfound? e)
+        (and (exn:mdb? e)
+             (equal? (exn:mdb-code e) MDB_NOTFOUND)))
+      (define x (mdb_txn_begin e #f '()))
+      (define d (mdb_dbi_open x #f '()))
+      (check-false (mdb_get x d #"test-key"))
+      (check-exn exn:mdb-notfound?
+                 (thunk (check-false (mdb_del x d #"test-key" #f))))
+      (mdb_put x d #"test-key" #"test-value" '())
+      (check-equal? (mdb_get x d #"test-key") #"test-value")
+      (mdb_del x d #"test-key")
+      (check-false (mdb_get x d #"test-key"))
+      (check-exn exn:mdb-notfound?
+                 (thunk (check-false (mdb_del x d #"test-key" #f)))))))
 
 (deflmdb mdb_cursor_open
   (_fun _MDB_txn-pointer
