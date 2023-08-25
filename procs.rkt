@@ -77,6 +77,14 @@
                   flags
                   mode))))
 
+(deflmdb mdb_env_stat
+  (_fun _MDB_env-pointer
+        (t : (_ptr o _MDB_stat))
+        -> (s : _int)
+        -> (begin
+             (check-status s)
+             t)))
+
 (deflmdb mdb_env_close
   (_fun _MDB_env-pointer -> _void))
 
@@ -151,6 +159,47 @@
         -> (begin
              (check-status s)
              d)))
+
+(deflmdb mdb_stat
+  (_fun _MDB_txn-pointer
+        _MDB_dbi
+        (t : (_ptr o _MDB_stat))
+        -> (s : _int)
+        -> (begin
+             (check-status s)
+             t)))
+
+(module+ test
+  ;; Since I don't want to bind too deeply to the LMDB internals, I'll test the
+  ;; number of entries in the stat structs.
+  (test-case "mdb_env_stat/stat"
+    (define path (make-temporary-directory "db~a"))
+    (define e (mdb_env_create))
+    (mdb_env_set_maxdbs e 2)
+    (mdb_env_open e path '() #o664)
+
+    ;; No named DBs in the environment yet
+    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
+
+    (define x1 (mdb_txn_begin e #f '()))
+    (define d1 (mdb_dbi_open x1 "d1" '(MDB_CREATE)))
+    (mdb_put x1 d1 #"key1" #"val1" '())
+    (mdb_put x1 d1 #"key2" #"val2" '())
+    (mdb_txn_commit x1)
+
+    (define x2 (mdb_txn_begin e #f '()))
+    (define d2 (mdb_dbi_open x2 "d2" '(MDB_CREATE)))
+    (mdb_put x2 d2 #"key3" #"val3" '())
+    (mdb_txn_commit x2)
+
+    ;; Number of named DBs in environment is now 2
+    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 2)
+
+    (define x3 (mdb_txn_begin e #f '()))
+    (check-equal? (MDB_stat-ms_entries (mdb_stat x3 d1)) 2)
+    (check-equal? (MDB_stat-ms_entries (mdb_stat x3 d2)) 1)
+
+    (mdb_env_close e)))
 
 (deflmdb mdb_dbi_flags
   (_fun _MDB_txn-pointer

@@ -24,6 +24,13 @@
 (define-cstruct _MDB_val ([mv_size _size]
                           [mv_data _pointer]))
 
+(define-cstruct _MDB_stat ([ms_psize          _uint]
+                           [ms_depth          _uint]
+                           [ms_branch_pages   _size]
+                           [ms_leaf_pages     _size]
+                           [ms_overflow_pages _size]
+                           [ms_entries        _size]))
+
 (define _mdb_env_flags
   (_bitmask `(
               MDB_FIXEDMAP   = #x1
