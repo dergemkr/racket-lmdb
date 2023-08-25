@@ -1,9 +1,16 @@
 #lang racket/base
 
+;; The functions in this file are defined in the same order as they're listed in
+;; the LMDB API documentation.
+
 (require ffi/unsafe
-         "types.rkt"
+         racket/string
          "errors.rkt"
+         "types.rkt"
          "utils.rkt")
+
+(module+ test
+  (require rackunit))
 
 (provide (except-out (all-defined-out)
                      check-status))
@@ -22,6 +29,15 @@
    (patch : (_ptr o _int))
    -> (readable : _string)
    -> (values major minor patch readable)))
+
+(module+ test
+  (test-case "mdb_version"
+    (define-values (major minor patch readable) (mdb_version))
+    ;; We can hard-code this since we bundle the library right now.
+    (check-equal? major 0)
+    (check-equal? minor 9)
+    (check-equal? patch 29)
+    (check-true (string-contains? readable "0.9.29"))))
 
 (deflmdb mdb_strerror
   (_fun _int -> _string))
