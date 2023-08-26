@@ -12,6 +12,9 @@ This module is a direct port of the [LMDB API](http://www.lmdb.tech/doc), with t
    These boxes will be modified to contain the returned key and data if applicable.
    `#t` is returned on success and `#f` is returned if the status is `MDB_NOTFOUND`.
    (Any error other than `MDB_NOTFOUND` will be raised.)
+6. Racket booleans are used for the int parameters of `mdb_drop` and `mdb_env_sync`.
+
+As a very direct port, this library gives you plenty of leeway to shoot yourself in the foot.
 
 ## Limitations
 

@@ -85,6 +85,53 @@
              (check-status s)
              t)))
 
+(deflmdb mdb_env_info
+  (_fun _MDB_env-pointer
+        (i : (_ptr o _MDB_envinfo))
+        -> (s : _int)
+        -> (begin
+             (check-status s)
+             i)))
+
+(module+ test
+  (test-case "mdb_env_info/env_set_mapsize"
+    (with-env (e)
+      ;; Check the map size of the envinfo struct.
+      (define default-mapsize 1048576)
+      (check-equal? (MDB_envinfo-me_mapsize (mdb_env_info e)) default-mapsize)
+      (define new-mapsize (* default-mapsize 2))
+      (mdb_env_set_mapsize e new-mapsize)
+      (check-equal? (MDB_envinfo-me_mapsize (mdb_env_info e)) new-mapsize))))
+
+(deflmdb mdb_env_sync
+  (_fun _MDB_env-pointer
+        _bool
+        -> (s : _int)
+        -> (check-status s)))
+
+(module+ test
+  (test-case "mdb_env_sync"
+    ;; The behavior of this function isn't very observable, but one error case
+    ;; is so we'll test that just to ensure the function is hooked up. We'll
+    ;; create an environment and then we'll open it in read-only mode and do a
+    ;; sync on it, which should fail since it's not allowed on read-only
+    ;; environments.
+    (define path (make-temporary-directory "db~a"))
+    (define e1 (mdb_env_create))
+    (mdb_env_open e1 path '() #o664)
+    (mdb_env_close e1)
+
+    (define e2 (mdb_env_create))
+    (mdb_env_open e2 path '(MDB_RDONLY) #o664)
+    (define (exn:mdb-eacces? e)
+      (and (exn:mdb? e)
+           ;; There's no method of acessing the platform's value for EACCES that
+           ;; I can find, so I'll just hard code the value and cross my fingers!
+           (equal? (exn:mdb-code e) 13)))
+    (check-exn exn:mdb-eacces?
+               (thunk (mdb_env_sync e2 #f)))
+    (mdb_env_close e2)))
+
 (deflmdb mdb_env_close
   (_fun _MDB_env-pointer -> _void))
 
@@ -95,6 +142,12 @@
         -> (begin
              (check-status s)
              f)))
+
+(deflmdb mdb_env_set_mapsize
+  (_fun _MDB_env-pointer
+        _size
+        -> (s : _int)
+        -> (check-status s)))
 
 (deflmdb mdb_env_set_maxreaders
   (_fun _MDB_env-pointer
@@ -169,39 +222,6 @@
              (check-status s)
              t)))
 
-(module+ test
-  ;; Since I don't want to bind too deeply to the LMDB internals, I'll test the
-  ;; number of entries in the stat structs.
-  (test-case "mdb_env_stat/stat"
-    (define path (make-temporary-directory "db~a"))
-    (define e (mdb_env_create))
-    (mdb_env_set_maxdbs e 2)
-    (mdb_env_open e path '() #o664)
-
-    ;; No named DBs in the environment yet
-    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
-
-    (define x1 (mdb_txn_begin e #f '()))
-    (define d1 (mdb_dbi_open x1 "d1" '(MDB_CREATE)))
-    (mdb_put x1 d1 #"key1" #"val1" '())
-    (mdb_put x1 d1 #"key2" #"val2" '())
-    (mdb_txn_commit x1)
-
-    (define x2 (mdb_txn_begin e #f '()))
-    (define d2 (mdb_dbi_open x2 "d2" '(MDB_CREATE)))
-    (mdb_put x2 d2 #"key3" #"val3" '())
-    (mdb_txn_commit x2)
-
-    ;; Number of named DBs in environment is now 2
-    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 2)
-
-    (define x3 (mdb_txn_begin e #f '()))
-    (check-equal? (MDB_stat-ms_entries (mdb_stat x3 d1)) 2)
-    (check-equal? (MDB_stat-ms_entries (mdb_stat x3 d2)) 1)
-    (mdb_txn_abort x3)
-
-    (mdb_env_close e)))
-
 (deflmdb mdb_dbi_flags
   (_fun _MDB_txn-pointer
         _MDB_dbi
@@ -210,6 +230,80 @@
         -> (begin
              (check-status s)
              f)))
+
+(deflmdb mdb_dbi_close
+  (_fun _MDB_env-pointer
+        _MDB_dbi
+        -> _void))
+
+(module+ test
+  (test-case "mdb_dbi_close"
+    (define path (make-temporary-directory "db~a"))
+    (define e (mdb_env_create))
+    (mdb_env_set_maxdbs e 1)
+    (mdb_env_open e path '() #o664)
+
+    (define x1 (mdb_txn_begin e #f '()))
+    (define d1 (mdb_dbi_open x1 "d1" '(MDB_CREATE)))
+
+    ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
+    (define (exn:mdb-dbs-full? e)
+      (and (exn:mdb? e)
+           (equal? (exn:mdb-code e) MDB_DBS_FULL)))
+    (check-exn exn:mdb-dbs-full?
+               (thunk (mdb_dbi_open x1 "d2" '(MDB_CREATE))))
+
+    (mdb_txn_commit x1)
+
+    (mdb_dbi_close e d1)
+
+    ;; Open call should succeed since we closed d1.
+    (define x2 (mdb_txn_begin e #f '()))
+    (mdb_dbi_open x2 "d2" '(MDB_CREATE))
+    (mdb_txn_commit x2)
+
+    (mdb_env_close e)))
+
+;; Accepts boolean for del instead of 1/0 int.
+(deflmdb mdb_drop
+  (_fun _MDB_txn-pointer
+        _MDB_dbi
+        _bool
+        -> (s : _int)
+        -> (check-status s)))
+
+(module+ test
+  (test-case "mdb_drop/env_stat/stat"
+    ;; Since I don't want to bind too deeply to the LMDB internals, I'll test
+    ;; the number of entries returned by mdb_env_stat and mdb_stat.
+    (define path (make-temporary-directory "db~a"))
+    (define e (mdb_env_create))
+    (mdb_env_set_maxdbs e 1)
+    (mdb_env_open e path '() #o664)
+
+    ;; No named DBs in the environment yet
+    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
+
+    (define x1 (mdb_txn_begin e #f '()))
+    (define d (mdb_dbi_open x1 "d" '(MDB_CREATE)))
+    (mdb_put x1 d #"key1" #"val1" '())
+    (mdb_txn_commit x1)
+
+    (define x2 (mdb_txn_begin e #f '()))
+    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
+    (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 1)
+    (mdb_drop x2 d #f)
+    (mdb_txn_commit x2)
+
+    (define x3 (mdb_txn_begin e #f '()))
+    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
+    (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 0)
+    (mdb_drop x3 d #t)
+    (mdb_txn_commit x3)
+
+    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
+
+    (mdb_env_close e)))
 
 ;; Returns value if found or #f on missing entry rather than raising
 ;; MDB_NOTFOUND.
@@ -261,7 +355,7 @@
                    (bytes->MDB_val/null val))))))
 
 (module+ test
-  (test-case "mdb_get/put/del"
+  (test-case "mdb_del/get/put"
     (with-env (e)
       (define (exn:mdb-notfound? e)
         (and (exn:mdb? e)

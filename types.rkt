@@ -31,6 +31,13 @@
                            [ms_overflow_pages _size]
                            [ms_entries        _size]))
 
+(define-cstruct _MDB_envinfo ([me_mapaddr    _pointer]
+                              [me_mapsize    _size]
+                              [me_last_pgno  _size]
+                              [me_last_txnid _size]
+                              [me_maxreaders _uint]
+                              [me_numreaders _uint]))
+
 (define _mdb_env_flags
   (_bitmask `(
               MDB_FIXEDMAP   = #x1
