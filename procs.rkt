@@ -205,6 +205,13 @@
 (deflmdb mdb_env_close
   (_fun _MDB_env-pointer -> _void))
 
+(deflmdb mdb_env_set_flags
+  (_fun _MDB_env-pointer
+        _mdb_env_flags
+        _bool
+        -> (s : _int)
+        -> (check-status s)))
+
 (deflmdb mdb_env_get_flags
   (_fun _MDB_env-pointer
         (f : (_ptr o _mdb_env_flags))
@@ -212,6 +219,15 @@
         -> (begin
              (check-status s)
              f)))
+
+(module+ test
+  (test-case "mdb_env_get_flags/set_flags"
+    (with-env (e)
+      (check-false (member 'MDB_NOSYNC (mdb_env_get_flags e)))
+      (mdb_env_set_flags e '(MDB_NOSYNC) #t)
+      (check-not-false (member 'MDB_NOSYNC (mdb_env_get_flags e)))
+      (mdb_env_set_flags e '(MDB_NOSYNC) #f)
+      (check-false (member 'MDB_NOSYNC (mdb_env_get_flags e))))))
 
 (deflmdb mdb_env_set_mapsize
   (_fun _MDB_env-pointer
