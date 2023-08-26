@@ -13,6 +13,7 @@ This module is a direct port of the [LMDB API](http://www.lmdb.tech/doc), with t
    `#t` is returned on success and `#f` is returned if the status is `MDB_NOTFOUND`.
    (Any error other than `MDB_NOTFOUND` will be raised.)
 6. Racket booleans are used for the int parameters of `mdb_drop` and `mdb_env_sync`.
+7. All the `mdb_env_copy*` functions have been condensed down to `mdb_env_copy`, which takes flags as an optional argument and dispatches to the `copy` or `copyfd` version based on the type of the second argument.
 
 As a very direct port, this library gives you plenty of leeway to shoot yourself in the foot.
 

@@ -10,7 +10,8 @@
          "utils.rkt")
 
 (module+ test
-  (require racket/file
+  (require ffi/unsafe/port
+           racket/file
            racket/function
            rackunit)
 
@@ -76,6 +77,74 @@
                   (path->complete-path path)
                   flags
                   mode))))
+
+(define mdb_env_copy
+  (let ()
+    (deflmdb mdb_env_copy2
+      (_fun _MDB_env-pointer
+            _path
+            _mdb_copy_flags
+            -> (s : _int)
+            -> (check-status s)))
+
+    (deflmdb mdb_env_copyfd2
+      (_fun _MDB_env-pointer
+            _int
+            _mdb_copy_flags
+            -> (s : _int)
+            -> (check-status s)))
+
+    ;; Use define form so proc has correct name.
+    (define (mdb_env_copy env path/fd [flags '()])
+      (if (integer? path/fd)
+          (mdb_env_copyfd2 env path/fd flags)
+          (mdb_env_copy2 env path/fd flags)))
+
+    mdb_env_copy))
+
+(module+ test
+  (test-case "mdb_env_copy"
+    ;; We'll put a test key and value in the environment, then copy it, and
+    ;; finally ensure the copies have that same test key and value.
+    (define test-key #"test")
+    (define test-value #"value")
+
+    (define (check-env path #:flags [flags '()])
+      (define e (mdb_env_create))
+      (mdb_env_open e path (cons 'MDB_RDONLY flags) #o664)
+      (define x (mdb_txn_begin e #f '(MDB_RDONLY)))
+      (define d (mdb_dbi_open x #f '()))
+      (check-equal? (mdb_get x d test-key) test-value)
+      (mdb_txn_abort x)
+      (mdb_env_close e))
+
+    (with-env (e)
+      (define x (mdb_txn_begin e #f '()))
+      (define d (mdb_dbi_open x #f '()))
+      (mdb_put x d test-key test-value '())
+      (mdb_txn_commit x)
+
+      ;; Copy to path, no flags
+      (define path1 (make-temporary-directory "db~a"))
+      (mdb_env_copy e path1)
+      (check-env path1)
+
+      ;; Copy to path with flags
+      (define path2 (make-temporary-directory "db~a"))
+      (mdb_env_copy e path2)
+      (check-env path2)
+
+      ;; Copy to fd, no flags
+      (define path3 (make-temporary-file "db~a"))
+      (define fd3 (open-output-file path3 #:mode 'binary #:exists 'truncate/replace))
+      (mdb_env_copy e (unsafe-port->file-descriptor fd3))
+      (check-env path3 #:flags '(MDB_NOSUBDIR))
+
+      ;; Copy to fd with flags
+      (define path4 (make-temporary-file "db~a"))
+      (define fd4 (open-output-file path4 #:mode 'binary #:exists 'truncate/replace))
+      (mdb_env_copy e (unsafe-port->file-descriptor fd4) '(MDB_CP_COMPACT))
+      (check-env path4 #:flags '(MDB_NOSUBDIR)))))
 
 (deflmdb mdb_env_stat
   (_fun _MDB_env-pointer

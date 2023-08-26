@@ -82,6 +82,9 @@
               )
             _uint))
 
+(define _mdb_copy_flags
+  (_bitmask '(MDB_CP_COMPACT = #x1)))
+
 (define _MDB_cursor_op
   (_enum '(MDB_FIRST
            MDB_FIRST_DUP
