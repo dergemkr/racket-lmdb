@@ -27,6 +27,7 @@ This module is a direct port of the [LMDB API](http://www.lmdb.tech/doc), with t
 
 * You'll likely want to open the database with `MDB_NOTLS` since all Racket threads within the same place are run on the same OS thread.
   If you don't, LMDB will use thread-local storage to track transactions and you won't be able to perform multiple read-only transactions within the same place.
+* This library does no extra bookkeeping, so as with regular LMDB, it's up to you to commit, abort or renew transactions.
 
 ## Bundled Libraries
 

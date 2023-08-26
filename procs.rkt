@@ -198,6 +198,7 @@
     (define x3 (mdb_txn_begin e #f '()))
     (check-equal? (MDB_stat-ms_entries (mdb_stat x3 d1)) 2)
     (check-equal? (MDB_stat-ms_entries (mdb_stat x3 d2)) 1)
+    (mdb_txn_abort x3)
 
     (mdb_env_close e)))
 
@@ -275,7 +276,8 @@
       (mdb_del x d #"test-key")
       (check-false (mdb_get x d #"test-key"))
       (check-exn exn:mdb-notfound?
-                 (thunk (check-false (mdb_del x d #"test-key" #f)))))))
+                 (thunk (check-false (mdb_del x d #"test-key" #f))))
+      (mdb_txn_abort x))))
 
 (deflmdb mdb_cursor_open
   (_fun _MDB_txn-pointer
