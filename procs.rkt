@@ -20,12 +20,16 @@
           [path (make-temporary-directory "db~a")])
       (mdb_env_open env path '() #o664)
 
-      body ...
+      (define return
+        (let ()
+          body ...))
 
       ;; This will not happen if there's an exception in body, but it's not a
       ;; problem since nobody else will use the env and we're unlikely to run out
       ;; of resources in testing.
-      (mdb_env_close env))))
+      (mdb_env_close env)
+
+      return)))
 
 (provide (except-out (all-defined-out)
                      check-status))
@@ -180,10 +184,8 @@
 
 (module+ test
   (test-case "mdb_env_sync"
-    ;; The behavior of this function isn't very observable, but one error case
-    ;; is so we'll test that just to ensure the function is hooked up. We'll
-    ;; create an environment and then we'll open it in read-only mode and do a
-    ;; sync on it, which should fail since it's not allowed on read-only
+    ;; We'll create an environment and then we'll open it in read-only mode and
+    ;; do a sync on it, which should fail since it's not allowed on read-only
     ;; environments.
     (define path (make-temporary-directory "db~a"))
     (define e1 (mdb_env_create))
@@ -192,11 +194,10 @@
 
     (define e2 (mdb_env_create))
     (mdb_env_open e2 path '(MDB_RDONLY) #o664)
+      (define errno-eacces (lookup-errno 'EACCES))
     (define (exn:mdb-eacces? e)
       (and (exn:mdb? e)
-           ;; There's no method of acessing the platform's value for EACCES that
-           ;; I can find, so I'll just hard code the value and cross my fingers!
-           (equal? (exn:mdb-code e) 13)))
+           (equal? (exn:mdb-code e) errno-eacces)))
     (check-exn exn:mdb-eacces?
                (thunk (mdb_env_sync e2 #f)))
     (mdb_env_close e2)))
