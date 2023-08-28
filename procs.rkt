@@ -45,43 +45,7 @@
 
   (define-syntax-rule (with-tmp-env (id . options) body ...)
     (with-env (id (make-temporary-directory "db~a") . options)
-      body ...))
-
-  (define-syntax-rule (with-txn (id env parent flags) body ...)
-    (let ([committing #f]
-          [id (txn-begin env parent flags)])
-      (call-with-exception-handler
-       (lambda (e)
-         (unless committing
-           (txn-abort id))
-         e)
-       (lambda ()
-         (let () body ...)
-         (set! committing #t)
-         (txn-commit id)))))
-
-  (test-case "with-txn"
-    (with-tmp-env (e)
-      (define d #f)
-
-      ;; Write value to DB and ensure that's committed in happy case.
-      (with-txn (x e #f '())
-        (set! d (dbi-open x #f '()))
-        (put x d #"key" #"value1" '()))
-      (with-txn (x e #f '())
-        (check-equal? (get x d #"key") #"value1"))
-
-      ;; Write value to DB, throw error, and ensure that value wasn't committed.
-      (check-exn
-       (lambda (e)
-         (and (exn:fail? e)
-              (equal? (exn-message e) "marker")))
-       (thunk
-        (with-txn (x e #f '())
-          (put x d #"key" #"value2" '())
-          (error "marker"))))
-      (with-txn (x e #f '())
-        (check-equal? (get x d #"key") #"value1")))))
+      body ...)))
 
 (provide (except-out (all-defined-out)
                      check-status))
@@ -392,6 +356,45 @@
         -> (s : _int)
         -> (check-status s))
   #:c-id mdb_txn_renew)
+
+;; Helper utility to manage txn-begin txn-commit/txn-abort
+(define-syntax-rule (with-txn (id env parent flags) body ...)
+  (let ([committing #f]
+        [id (txn-begin env parent flags)])
+    (call-with-exception-handler
+     (lambda (e)
+       (unless committing
+         (txn-abort id))
+       e)
+     (lambda ()
+       (begin0
+         (let () body ...)
+         (set! committing #t)
+         (txn-commit id))))))
+
+(module+ test
+  (test-case "with-txn"
+    (with-tmp-env (e)
+      (define d #f)
+
+      ;; Write value to DB and ensure that's committed in happy case.
+      (with-txn (x e #f '())
+        (set! d (dbi-open x #f '()))
+        (put x d #"key" #"value1" '()))
+      (with-txn (x e #f '())
+        (check-equal? (get x d #"key") #"value1"))
+
+      ;; Write value to DB, throw error, and ensure that value wasn't committed.
+      (check-exn
+       (lambda (e)
+         (and (exn:fail? e)
+              (equal? (exn-message e) "marker")))
+       (thunk
+        (with-txn (x e #f '())
+          (put x d #"key" #"value2" '())
+          (error "marker"))))
+      (with-txn (x e #f '())
+        (check-equal? (get x d #"key") #"value1")))))
 
 (deflmdb dbi-open
   (_fun _MDB_txn-pointer
