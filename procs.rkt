@@ -36,9 +36,9 @@
              (let ()
                body ...))
 
-           ;; This will not happen if there's an exception in body, but it's not a
-           ;; problem since nobody else will use the env and we're unlikely to run out
-           ;; of resources in testing.
+           ;; This will not happen if there's an exception in body, but it's not
+           ;; a problem since nobody else will use the env and we're unlikely to
+           ;; run out of resources in testing.
            (env-close name)
 
            return)]))
@@ -50,7 +50,6 @@
 (provide (except-out (all-defined-out)
                      check-status))
 
-; TODO: Make sure we follow error string conventions
 (define (check-status s)
   (unless (zero? s)
     (raise (exn:mdb (format "exn:mdb: ~a" (mdb-strerror s))
@@ -375,11 +374,12 @@
 (module+ test
   (test-case "with-txn"
     (with-tmp-env (e)
-      (define d #f)
+      (define d
+        (with-txn (x e #f '())
+          (dbi-open x #f '())))
 
       ;; Write value to DB and ensure that's committed in happy case.
       (with-txn (x e #f '())
-        (set! d (dbi-open x #f '()))
         (put x d #"key" #"value1" '()))
       (with-txn (x e #f '())
         (check-equal? (get x d #"key") #"value1"))
@@ -438,11 +438,12 @@
     (with-tmp-env (e)
       #:before-open (env-set-maxdbs e 1)
 
-      (define d1 #f)
-      (with-txn (x e #f '())
-        (set! d1 (dbi-open x "d1" '(MDB_CREATE)))
+      (define d1
+        (with-txn (x e #f '())
+          (dbi-open x "d1" '(MDB_CREATE))))
 
-        ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
+      ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
+      (with-txn (x e #f '())
         (define (exn:mdb-dbs-full? e)
           (and (exn:mdb? e)
                (equal? (exn:mdb-code e) MDB_DBS_FULL)))
@@ -454,7 +455,9 @@
 
       ;; Open call should succeed since we closed d1.
       (with-txn (x e #f '())
-        (dbi-open x "d2" '(MDB_CREATE))))))
+        (define d2 (dbi-open x "d2" '(MDB_CREATE)))
+        ;; Just don't want Racket printing value of d2.
+        (void)))))
 
 ;; Accepts boolean for del instead of 1/0 int.
 (deflmdb dbi-drop
@@ -475,9 +478,11 @@
       ;; No named DBs in the environment yet
       (check-equal? (MDB_stat-ms_entries (env-stat e)) 0)
 
-      (define d #f)
+      (define d
+        (with-txn (x e #f '())
+          (dbi-open x "d" '(MDB_CREATE))))
+
       (with-txn (x e #f '())
-        (set! d (dbi-open x "d" '(MDB_CREATE)))
         (put x d #"key1" #"val1" '()))
 
       (with-txn (x e #f '())
@@ -545,8 +550,8 @@
   #:c-id mdb_del)
 
 (module+ test
-    (with-tmp-env (e)
   (test-case "del/get/put"
+    (with-tmp-env (e)
       (define (exn:mdb-notfound? e)
         (and (exn:mdb? e)
              (equal? (exn:mdb-code e) MDB_NOTFOUND)))

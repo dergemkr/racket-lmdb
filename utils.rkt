@@ -1,8 +1,7 @@
 #lang racket/base
 
 (require ffi/unsafe
-         "types.rkt"
-         "errors.rkt")
+         "types.rkt")
 
 (provide (all-defined-out))
 
