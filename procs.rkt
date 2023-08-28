@@ -45,7 +45,43 @@
 
   (define-syntax-rule (with-tmp-env (id . options) body ...)
     (with-env (id (make-temporary-directory "db~a") . options)
-      body ...)))
+      body ...))
+
+  (define-syntax-rule (with-txn (id env parent flags) body ...)
+    (let ([committing #f]
+          [id (mdb_txn_begin env parent flags)])
+      (call-with-exception-handler
+       (lambda (e)
+         (unless committing
+           (mdb_txn_abort id))
+         e)
+       (lambda ()
+         (let () body ...)
+         (set! committing #t)
+         (mdb_txn_commit id)))))
+
+  (test-case "with-txn"
+    (with-tmp-env (e)
+      (define d #f)
+
+      ;; Write value to DB and ensure that's committed in happy case.
+      (with-txn (x e #f '())
+        (set! d (mdb_dbi_open x #f '()))
+        (mdb_put x d #"key" #"value1" '()))
+      (with-txn (x e #f '())
+        (check-equal? (mdb_get x d #"key") #"value1"))
+
+      ;; Write value to DB, throw error, and ensure that value wasn't committed.
+      (check-exn
+       (lambda (e)
+         (and (exn:fail? e)
+              (equal? (exn-message e) "marker")))
+       (thunk
+        (with-txn (x e #f '())
+          (mdb_put x d #"key" #"value2" '())
+          (error "marker"))))
+      (with-txn (x e #f '())
+        (check-equal? (mdb_get x d #"key") #"value1")))))
 
 (provide (except-out (all-defined-out)
                      check-status))
@@ -131,16 +167,15 @@
 
     (define (check-env path #:flags [flags '()])
       (with-env (e path #:flags (cons 'MDB_RDONLY flags))
-        (define x (mdb_txn_begin e #f '(MDB_RDONLY)))
-        (define d (mdb_dbi_open x #f '()))
-        (check-equal? (mdb_get x d test-key) test-value)
-        (mdb_txn_abort x)))
+        (with-txn (x e #f '(MDB_RDONLY))
+          (define d (mdb_dbi_open x #f '()))
+          (check-equal? (mdb_get x d test-key) test-value))))
 
     (with-tmp-env (e)
-      (define x (mdb_txn_begin e #f '()))
-      (define d (mdb_dbi_open x #f '()))
-      (mdb_put x d test-key test-value '())
-      (mdb_txn_commit x)
+      (with-txn (x e #f '())
+        (define d (mdb_dbi_open x #f '()))
+        (mdb_put x d test-key test-value '()))
+
 
       ;; Copy to path, no flags
       (define path1 (make-temporary-directory "db~a"))
@@ -255,6 +290,14 @@
     (with-env (e path)
       (check-equal? (mdb_env_get_path e) path))))
 
+(deflmdb mdb_env_get_fd
+  (_fun _MDB_env-pointer
+        (f : (_ptr o _int))
+        -> (s : _int)
+        -> (begin
+             (check-status s)
+             f)))
+
 (deflmdb mdb_env_set_mapsize
   (_fun _MDB_env-pointer
         _size
@@ -364,24 +407,23 @@
     (with-tmp-env (e)
       #:before-open (mdb_env_set_maxdbs e 1)
 
-      (define x1 (mdb_txn_begin e #f '()))
-      (define d1 (mdb_dbi_open x1 "d1" '(MDB_CREATE)))
+      (define d1 #f)
+      (with-txn (x e #f '())
+        (set! d1 (mdb_dbi_open x "d1" '(MDB_CREATE)))
 
-      ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
-      (define (exn:mdb-dbs-full? e)
-        (and (exn:mdb? e)
-             (equal? (exn:mdb-code e) MDB_DBS_FULL)))
-      (check-exn exn:mdb-dbs-full?
-                 (thunk (mdb_dbi_open x1 "d2" '(MDB_CREATE))))
+        ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
+        (define (exn:mdb-dbs-full? e)
+          (and (exn:mdb? e)
+               (equal? (exn:mdb-code e) MDB_DBS_FULL)))
+        (check-exn exn:mdb-dbs-full?
+                   (thunk (mdb_dbi_open x "d2" '(MDB_CREATE)))))
 
-      (mdb_txn_commit x1)
-
+      ;; Close d1 after transaction has finished.
       (mdb_dbi_close e d1)
 
       ;; Open call should succeed since we closed d1.
-      (define x2 (mdb_txn_begin e #f '()))
-      (mdb_dbi_open x2 "d2" '(MDB_CREATE))
-      (mdb_txn_commit x2))))
+      (with-txn (x e #f '())
+        (mdb_dbi_open x "d2" '(MDB_CREATE))))))
 
 ;; Accepts boolean for del instead of 1/0 int.
 (deflmdb mdb_drop
@@ -401,22 +443,20 @@
       ;; No named DBs in the environment yet
       (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
 
-      (define x1 (mdb_txn_begin e #f '()))
-      (define d (mdb_dbi_open x1 "d" '(MDB_CREATE)))
-      (mdb_put x1 d #"key1" #"val1" '())
-      (mdb_txn_commit x1)
+      (define d #f)
+      (with-txn (x e #f '())
+        (set! d (mdb_dbi_open x "d" '(MDB_CREATE)))
+        (mdb_put x d #"key1" #"val1" '()))
 
-      (define x2 (mdb_txn_begin e #f '()))
-      (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
-      (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 1)
-      (mdb_drop x2 d #f)
-      (mdb_txn_commit x2)
+      (with-txn (x e #f '())
+        (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
+        (check-equal? (MDB_stat-ms_entries (mdb_stat x d)) 1)
+        (mdb_drop x d #f))
 
-      (define x3 (mdb_txn_begin e #f '()))
-      (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
-      (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 0)
-      (mdb_drop x3 d #t)
-      (mdb_txn_commit x3)
+      (with-txn (x e #f '())
+        (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
+        (check-equal? (MDB_stat-ms_entries (mdb_stat x d)) 0)
+        (mdb_drop x d #t))
 
       (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0))))
 
@@ -475,18 +515,17 @@
       (define (exn:mdb-notfound? e)
         (and (exn:mdb? e)
              (equal? (exn:mdb-code e) MDB_NOTFOUND)))
-      (define x (mdb_txn_begin e #f '()))
-      (define d (mdb_dbi_open x #f '()))
-      (check-false (mdb_get x d #"test-key"))
-      (check-exn exn:mdb-notfound?
-                 (thunk (check-false (mdb_del x d #"test-key" #f))))
-      (mdb_put x d #"test-key" #"test-value" '())
-      (check-equal? (mdb_get x d #"test-key") #"test-value")
-      (mdb_del x d #"test-key")
-      (check-false (mdb_get x d #"test-key"))
-      (check-exn exn:mdb-notfound?
-                 (thunk (check-false (mdb_del x d #"test-key" #f))))
-      (mdb_txn_abort x))))
+      (with-txn (x e #f '())
+        (define d (mdb_dbi_open x #f '()))
+        (check-false (mdb_get x d #"test-key"))
+        (check-exn exn:mdb-notfound?
+                   (thunk (check-false (mdb_del x d #"test-key" #f))))
+        (mdb_put x d #"test-key" #"test-value" '())
+        (check-equal? (mdb_get x d #"test-key") #"test-value")
+        (mdb_del x d #"test-key")
+        (check-false (mdb_get x d #"test-key"))
+        (check-exn exn:mdb-notfound?
+                   (thunk (check-false (mdb_del x d #"test-key" #f))))))))
 
 (deflmdb mdb_cursor_open
   (_fun _MDB_txn-pointer
@@ -593,16 +632,13 @@
   (test-case "mdb_reader_check"
     (define path (make-temporary-directory "db~a"))
     (with-env (e path)
-      (define x (mdb_txn_begin e #f '(MDB_RDONLY)))
-
-      (define l (mdb_reader_list e))
-      (check-true (string-contains? l "pid"))
-      (check-true (string-contains? l "thread"))
-      (check-true (string-contains? l "txnid"))
-      (check-true (string-contains? l (~a (getpid))))
-      (check-true (string-contains? l (~a (mdb_txn_id x))))
-
-      (mdb_txn_abort x))))
+      (with-txn (x e #f  '(MDB_RDONLY))
+        (define l (mdb_reader_list e))
+        (check-true (string-contains? l "pid"))
+        (check-true (string-contains? l "thread"))
+        (check-true (string-contains? l "txnid"))
+        (check-true (string-contains? l (~a (getpid))))
+        (check-true (string-contains? l (~a (mdb_txn_id x))))))))
 
 (deflmdb mdb_reader_check
   (_fun _MDB_env-pointer
