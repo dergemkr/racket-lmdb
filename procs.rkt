@@ -581,6 +581,20 @@
   (_fun _MDB_cursor-pointer -> _void)
   #:c-id mdb_cursor_close)
 
+(define-syntax-rule (with-cursor (id txn dbi) body ...)
+  (let ([done #f]
+        [id (cursor-open txn dbi)])
+    (call-with-exception-handler
+     (lambda (e)
+       (unless done
+         (cursor-close id))
+       e)
+     (lambda ()
+       (begin0
+           (let () body ...)
+         (set! done #t)
+         (cursor-close id))))))
+
 (deflmdb cursor-renew
   (_fun _MDB_txn-pointer
         _MDB_cursor-pointer
@@ -595,6 +609,26 @@
 (deflmdb cursor-dbi
   (_fun _MDB_cursor-pointer -> _MDB_dbi)
   #:c-id mdb_cursor_dbi)
+
+(module+ test
+  (test-case "cursor-dbi/cursor-renew/cursor-txn"
+    (with-tmp-env (e)
+      (define d
+        (with-txn (x1 e #f '())
+          (dbi-open x1 #f '())))
+
+      (define c #f)
+      (with-txn (x2 e #f '(MDB_RDONLY))
+        (set! c (cursor-open x2 d))
+        (check-equal? (cursor-dbi c) d)
+        (check-equal? (cursor-txn c) x2))
+
+      ;; Renew swaps cursor in read-only transaction to new read-only
+      ;; transaction, keeping cursor on same database.
+      (with-txn (x3 e #f '(MDB_RDONLY))
+        (cursor-renew x3 c)
+        (check-equal? (cursor-dbi c) d)
+        (check-equal? (cursor-txn c) x3)))))
 
 ;; Returns boolean indicating if item was found or not.
 (deflmdb cursor-get
@@ -633,6 +667,22 @@
                 #t])))
   #:c-id mdb_cursor_get)
 
+(module+ test
+  (test-case "cursor-get"
+    (with-tmp-env (e)
+      (with-txn (x e #f '())
+        (define d (dbi-open x #f '()))
+
+        (put x d #"test" #"val1" '())
+
+        (with-cursor (c x d)
+          (define kb (box #f))
+          (define db (box #f))
+          (check-true (cursor-get c kb db 'MDB_FIRST))
+          (check-equal? (unbox kb) #"test")
+          (check-equal? (unbox db) #"val1")
+          (check-false (cursor-get c kb db 'MDB_NEXT)))))))
+
 (deflmdb cursor-put
   (_fun _MDB_cursor-pointer
         _MDB_val-pointer
@@ -641,10 +691,27 @@
         -> _int)
   #:wrap (lambda (raw)
            (lambda (cursor key data flags)
-             (define key-val (bytes->MDB_val/null (unbox key)))
-             (define data-val (bytes->MDB_val/null (unbox data)))
+             (define key-val (bytes->MDB_val/null key))
+             (define data-val (bytes->MDB_val/null data))
              (check-status (raw cursor key-val data-val flags))))
   #:c-id mdb_cursor_put)
+
+(module+ test
+  (test-case "cursor-put"
+    (with-tmp-env (e)
+      (with-txn (x e #f '())
+        (define d (dbi-open x #f '(MDB_DUPSORT)))
+
+        (put x d #"test2" #"val2" '())
+
+        (with-cursor (c x d)
+          (cursor-get c (box #"test2") (box #f) 'MDB_SET)
+          (cursor-put c #"test3" #"val3" '())
+          (cursor-put c #"test1" #"val1" '()))
+
+        (check-equal? (get x d #"test1") #"val1")
+        (check-equal? (get x d #"test2") #"val2")
+        (check-equal? (get x d #"test3") #"val3")))))
 
 (deflmdb cursor-del
   (_fun _MDB_cursor-pointer
@@ -652,6 +719,24 @@
         -> (s : _int)
         -> (check-status s))
   #:c-id mdb_cursor_del)
+
+(module+ test
+  (test-case "cursor-count"
+    (with-tmp-env (e)
+      (with-txn (x e #f '())
+        (define d (dbi-open x #f '(MDB_DUPSORT)))
+
+        (put x d #"test1" #"val1" '())
+        (put x d #"test2" #"val2" '())
+        (put x d #"test3" #"val3" '())
+
+        (with-cursor (c x d)
+          (cursor-get c (box #"test2") (box #f) 'MDB_SET)
+          (cursor-del c '()))
+
+        (check-equal? (get x d #"test1") #"val1")
+        (check-equal? (get x d #"test2") #f)
+        (check-equal? (get x d #"test3") #"val3")))))
 
 (deflmdb cursor-count
   (_fun _MDB_cursor-pointer
@@ -661,6 +746,21 @@
              (check-status s)
              c))
   #:c-id mdb_cursor_count)
+
+(module+ test
+  (test-case "cursor-count"
+    (with-tmp-env (e)
+      (with-txn (x e #f '())
+        (define d (dbi-open x #f '(MDB_DUPSORT)))
+
+        (put x d #"test1" #"val3" '())
+        (put x d #"test1" #"val2" '())
+        (put x d #"test1" #"val1" '())
+        (put x d #"test2" #"val4" '())
+
+        (with-cursor (c x d)
+          (cursor-get c (box #f) (box #f) 'MDB_FIRST)
+          (check-equal? (cursor-count c) 3))))))
 
 (deflmdb reader-list
   (_fun _MDB_env-pointer
