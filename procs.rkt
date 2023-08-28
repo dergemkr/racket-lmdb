@@ -13,23 +13,37 @@
   (require ffi/unsafe/port
            racket/file
            racket/function
-           rackunit)
+           rackunit
+           (for-syntax racket/base
+                       syntax/parse))
 
-  (define-syntax-rule (with-env (env) body ...)
-    (let ([env (mdb_env_create)]
-          [path (make-temporary-directory "db~a")])
-      (mdb_env_open env path '() #o664)
+  (define-syntax (with-env stx)
+    (syntax-parse stx
+      [(_ (name:id path:expr (~alt (~optional (~seq #:flags flags:expr))
+                                   (~optional (~seq #:mode mode:expr))) ...)
+          (~optional (~seq #:before-open opener:expr))
+          body ...+)
+       #'(let ([name (mdb_env_create)]
+               [m (~? mode #o664)]
+               [f (~? flags '())])
+           (~? opener)
 
-      (define return
-        (let ()
-          body ...))
+           (mdb_env_open name path f m)
 
-      ;; This will not happen if there's an exception in body, but it's not a
-      ;; problem since nobody else will use the env and we're unlikely to run out
-      ;; of resources in testing.
-      (mdb_env_close env)
+           (define return
+             (let ()
+               body ...))
 
-      return)))
+           ;; This will not happen if there's an exception in body, but it's not a
+           ;; problem since nobody else will use the env and we're unlikely to run out
+           ;; of resources in testing.
+           (mdb_env_close name)
+
+           return)]))
+
+  (define-syntax-rule (with-tmp-env (id . options) body ...)
+    (with-env (id (make-temporary-directory "db~a") . options)
+      body ...)))
 
 (provide (except-out (all-defined-out)
                      check-status))
@@ -114,15 +128,13 @@
     (define test-value #"value")
 
     (define (check-env path #:flags [flags '()])
-      (define e (mdb_env_create))
-      (mdb_env_open e path (cons 'MDB_RDONLY flags) #o664)
-      (define x (mdb_txn_begin e #f '(MDB_RDONLY)))
-      (define d (mdb_dbi_open x #f '()))
-      (check-equal? (mdb_get x d test-key) test-value)
-      (mdb_txn_abort x)
-      (mdb_env_close e))
+      (with-env (e path #:flags (cons 'MDB_RDONLY flags))
+        (define x (mdb_txn_begin e #f '(MDB_RDONLY)))
+        (define d (mdb_dbi_open x #f '()))
+        (check-equal? (mdb_get x d test-key) test-value)
+        (mdb_txn_abort x)))
 
-    (with-env (e)
+    (with-tmp-env (e)
       (define x (mdb_txn_begin e #f '()))
       (define d (mdb_dbi_open x #f '()))
       (mdb_put x d test-key test-value '())
@@ -168,7 +180,7 @@
 
 (module+ test
   (test-case "mdb_env_info/env_set_mapsize"
-    (with-env (e)
+    (with-tmp-env (e)
       ;; Check the map size of the envinfo struct.
       (define default-mapsize 1048576)
       (check-equal? (MDB_envinfo-me_mapsize (mdb_env_info e)) default-mapsize)
@@ -188,19 +200,17 @@
     ;; do a sync on it, which should fail since it's not allowed on read-only
     ;; environments.
     (define path (make-temporary-directory "db~a"))
-    (define e1 (mdb_env_create))
-    (mdb_env_open e1 path '() #o664)
-    (mdb_env_close e1)
+    (with-env (e path)
+      ;; Just creating an empty environment.
+      (void))
 
-    (define e2 (mdb_env_create))
-    (mdb_env_open e2 path '(MDB_RDONLY) #o664)
+    (with-env (e path #:flags '(MDB_RDONLY))
       (define errno-eacces (lookup-errno 'EACCES))
-    (define (exn:mdb-eacces? e)
-      (and (exn:mdb? e)
-           (equal? (exn:mdb-code e) errno-eacces)))
-    (check-exn exn:mdb-eacces?
-               (thunk (mdb_env_sync e2 #f)))
-    (mdb_env_close e2)))
+      (define (exn:mdb-eacces? e)
+        (and (exn:mdb? e)
+             (equal? (exn:mdb-code e) errno-eacces)))
+      (check-exn exn:mdb-eacces?
+                 (thunk (env-sync e #f))))))
 
 (deflmdb mdb_env_close
   (_fun _MDB_env-pointer -> _void))
@@ -324,31 +334,27 @@
 
 (module+ test
   (test-case "mdb_dbi_close"
-    (define path (make-temporary-directory "db~a"))
-    (define e (mdb_env_create))
-    (mdb_env_set_maxdbs e 1)
-    (mdb_env_open e path '() #o664)
+    (with-tmp-env (e)
+      #:before-open (mdb_env_set_maxdbs e 1)
 
-    (define x1 (mdb_txn_begin e #f '()))
-    (define d1 (mdb_dbi_open x1 "d1" '(MDB_CREATE)))
+      (define x1 (mdb_txn_begin e #f '()))
+      (define d1 (mdb_dbi_open x1 "d1" '(MDB_CREATE)))
 
-    ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
-    (define (exn:mdb-dbs-full? e)
-      (and (exn:mdb? e)
-           (equal? (exn:mdb-code e) MDB_DBS_FULL)))
-    (check-exn exn:mdb-dbs-full?
-               (thunk (mdb_dbi_open x1 "d2" '(MDB_CREATE))))
+      ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
+      (define (exn:mdb-dbs-full? e)
+        (and (exn:mdb? e)
+             (equal? (exn:mdb-code e) MDB_DBS_FULL)))
+      (check-exn exn:mdb-dbs-full?
+                 (thunk (mdb_dbi_open x1 "d2" '(MDB_CREATE))))
 
-    (mdb_txn_commit x1)
+      (mdb_txn_commit x1)
 
-    (mdb_dbi_close e d1)
+      (mdb_dbi_close e d1)
 
-    ;; Open call should succeed since we closed d1.
-    (define x2 (mdb_txn_begin e #f '()))
-    (mdb_dbi_open x2 "d2" '(MDB_CREATE))
-    (mdb_txn_commit x2)
-
-    (mdb_env_close e)))
+      ;; Open call should succeed since we closed d1.
+      (define x2 (mdb_txn_begin e #f '()))
+      (mdb_dbi_open x2 "d2" '(MDB_CREATE))
+      (mdb_txn_commit x2))))
 
 ;; Accepts boolean for del instead of 1/0 int.
 (deflmdb mdb_drop
@@ -362,34 +368,30 @@
   (test-case "mdb_drop/env_stat/stat"
     ;; Since I don't want to bind too deeply to the LMDB internals, I'll test
     ;; the number of entries returned by mdb_env_stat and mdb_stat.
-    (define path (make-temporary-directory "db~a"))
-    (define e (mdb_env_create))
-    (mdb_env_set_maxdbs e 1)
-    (mdb_env_open e path '() #o664)
+    (with-tmp-env (e)
+      #:before-open (mdb_env_set_maxdbs e 1)
 
-    ;; No named DBs in the environment yet
-    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
+      ;; No named DBs in the environment yet
+      (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
 
-    (define x1 (mdb_txn_begin e #f '()))
-    (define d (mdb_dbi_open x1 "d" '(MDB_CREATE)))
-    (mdb_put x1 d #"key1" #"val1" '())
-    (mdb_txn_commit x1)
+      (define x1 (mdb_txn_begin e #f '()))
+      (define d (mdb_dbi_open x1 "d" '(MDB_CREATE)))
+      (mdb_put x1 d #"key1" #"val1" '())
+      (mdb_txn_commit x1)
 
-    (define x2 (mdb_txn_begin e #f '()))
-    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
-    (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 1)
-    (mdb_drop x2 d #f)
-    (mdb_txn_commit x2)
+      (define x2 (mdb_txn_begin e #f '()))
+      (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
+      (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 1)
+      (mdb_drop x2 d #f)
+      (mdb_txn_commit x2)
 
-    (define x3 (mdb_txn_begin e #f '()))
-    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
-    (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 0)
-    (mdb_drop x3 d #t)
-    (mdb_txn_commit x3)
+      (define x3 (mdb_txn_begin e #f '()))
+      (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 1)
+      (check-equal? (MDB_stat-ms_entries (mdb_stat x2 d)) 0)
+      (mdb_drop x3 d #t)
+      (mdb_txn_commit x3)
 
-    (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0)
-
-    (mdb_env_close e)))
+      (check-equal? (MDB_stat-ms_entries (mdb_env_stat e)) 0))))
 
 ;; Returns value if found or #f on missing entry rather than raising
 ;; MDB_NOTFOUND.
@@ -441,8 +443,8 @@
                    (bytes->MDB_val/null val))))))
 
 (module+ test
+    (with-tmp-env (e)
   (test-case "mdb_del/get/put"
-    (with-env (e)
       (define (exn:mdb-notfound? e)
         (and (exn:mdb? e)
              (equal? (exn:mdb-code e) MDB_NOTFOUND)))
