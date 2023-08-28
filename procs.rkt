@@ -232,12 +232,26 @@
 
 (module+ test
   (test-case "mdb_env_get_flags/set_flags"
-    (with-env (e)
+    (with-tmp-env (e)
       (check-false (member 'MDB_NOSYNC (mdb_env_get_flags e)))
       (mdb_env_set_flags e '(MDB_NOSYNC) #t)
       (check-not-false (member 'MDB_NOSYNC (mdb_env_get_flags e)))
       (mdb_env_set_flags e '(MDB_NOSYNC) #f)
       (check-false (member 'MDB_NOSYNC (mdb_env_get_flags e))))))
+
+(deflmdb mdb_env_get_path
+  (_fun _MDB_env-pointer
+        (p : (_ptr o _path))
+        -> (s : _int)
+        -> (begin
+             (check-status s)
+             p)))
+
+(module+ test
+  (test-case "mdb_env_get_path"
+    (define path (make-temporary-directory "db~a"))
+    (with-env (e path)
+      (check-equal? (mdb_env_get_path e) path))))
 
 (deflmdb mdb_env_set_mapsize
   (_fun _MDB_env-pointer
