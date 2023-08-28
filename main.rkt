@@ -1,7 +1,10 @@
 #lang racket/base
 
-(require "errors.rkt"
+(require (submod "types.rkt" public)
+         "errors.rkt"
          "procs.rkt")
 
-(provide (all-from-out "procs.rkt"
-                       "errors.rkt"))
+(provide
+ (all-from-out (submod "types.rkt" public)
+               "procs.rkt"
+               "errors.rkt"))

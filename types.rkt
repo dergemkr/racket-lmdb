@@ -6,6 +6,28 @@
 
 (provide (all-defined-out))
 
+(module+ public
+  (provide
+   (rename-out [MDB_env-pointer?    env?]
+               [MDB_txn-pointer?    txn?]
+               [MDB_cursor-pointer? cursor?]
+
+               [MDB_stat?                  stat?]
+               [MDB_stat-ms_psize          stat-psize]
+               [MDB_stat-ms_depth          stat-depth]
+               [MDB_stat-ms_branch_pages   stat-branch-pages]
+               [MDB_stat-ms_leaf_pages     stat-leaf-pages]
+               [MDB_stat-ms_overflow_pages stat-overflow-pages]
+               [MDB_stat-ms_entries        stat-entries]
+
+               [MDB_envinfo?              envinfo?]
+               [MDB_envinfo-me_mapaddr    envinfo-mapaddr]
+               [MDB_envinfo-me_mapsize    envinvo-mapsize]
+               [MDB_envinfo-me_last_pgno  envinfo-last-pgno]
+               [MDB_envinfo-me_last_txnid envinfo-last-txnid]
+               [MDB_envinfo-me_maxreaders envinfo-maxreaders]
+               [MDB_envinfo-me_numreaders envinfo-numreaders])))
+
 ;; Based on https://github.com/jbclements/RSound/blob/master/rsound/private/s16vector-add.rkt
 (define-runtime-path here "libs")
 
@@ -14,10 +36,9 @@
                                          (system-library-subpath #f)
                                          "lmdb")))
 
-(define _MDB_env-pointer (_cpointer 'MDB_env))
-(define _MDB_txn-pointer (_cpointer 'MDB_txn))
-(define _MDB_txn-pointer/null (_cpointer/null 'MDB_txn))
-(define _MDB_cursor-pointer (_cpointer 'MDB_cursor))
+(define-cpointer-type _MDB_env-pointer)
+(define-cpointer-type _MDB_txn-pointer)
+(define-cpointer-type _MDB_cursor-pointer)
 (define _MDB_dbi _uint)
 (define _mdb_mode_t _int)
 
