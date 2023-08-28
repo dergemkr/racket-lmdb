@@ -279,6 +279,17 @@
         -> (s : _int)
         -> (check-status s)))
 
+(deflmdb mdb_env_get_maxkeysize
+  (_fun _MDB_env-pointer
+        -> _int))
+
+(module+ test
+  (test-case "mdb_env_get_maxkeysize"
+    (with-tmp-env (e)
+      ;; We can hard-code this constant since we bundle the LMDB library. Not a
+      ;; great test, but at least it makes sure the function is hooked up.
+      (check-equal? (mdb_env_get_maxkeysize e) 511))))
+
 (deflmdb mdb_txn_begin
   (_fun _MDB_env-pointer
         _MDB_txn-pointer/null
