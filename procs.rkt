@@ -10,12 +10,14 @@
          "utils.rkt")
 
 (module+ test
-  (require ffi/unsafe/port
+  (require (for-syntax racket/base
+                       syntax/parse)
+           ffi/unsafe/port
            racket/file
+           racket/format
            racket/function
-           rackunit
-           (for-syntax racket/base
-                       syntax/parse))
+           racket/os
+           rackunit)
 
   (define-syntax (with-env stx)
     (syntax-parse stx
@@ -571,3 +573,48 @@
         -> (begin
              (check-status s)
              c)))
+
+(deflmdb mdb_reader_list
+  (_fun _MDB_env-pointer
+        _MDB_msg_func
+        _pointer
+        -> (s : _int)
+        -> (check-status s))
+  #:wrap (lambda (proc)
+           (lambda (env)
+             (define log (open-output-string))
+             (define (log-append msg ctx)
+               (display msg log)
+               0)
+             (proc env log-append #f)
+             (get-output-string log))))
+
+(module+ test
+  (test-case "mdb_reader_check"
+    (define path (make-temporary-directory "db~a"))
+    (with-env (e path)
+      (define x (mdb_txn_begin e #f '(MDB_RDONLY)))
+
+      (define l (mdb_reader_list e))
+      (check-true (string-contains? l "pid"))
+      (check-true (string-contains? l "thread"))
+      (check-true (string-contains? l "txnid"))
+      (check-true (string-contains? l (~a (getpid))))
+      (check-true (string-contains? l (~a (mdb_txn_id x))))
+
+      (mdb_txn_abort x))))
+
+(deflmdb mdb_reader_check
+  (_fun _MDB_env-pointer
+        (d : (_ptr o _int))
+        -> (s : _int)
+        -> (begin
+             (check-status s)
+             d)))
+
+(module+ test
+  (test-case "mdb_reader_check"
+    ;; Don't know how to force a stale reader. Dumb test, but it ensures the
+    ;; proc is hooked up.
+    (with-tmp-env (e)
+      (check-equal? (mdb_reader_check e) 0))))
