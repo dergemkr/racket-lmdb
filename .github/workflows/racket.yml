@@ -7,7 +7,9 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        racket-version: [ 'current' ]
+        # Run on current and minimum versions we support. 8.5 is the minimum
+        # because we depend on functions added in base library version 8.4.0.3.
+        racket-version: [ 'current', '8.5' ]
         racket-variant: [ 'CS', 'BC' ]
     name: Racket ${{ matrix.racket-version }} ${{ matrix.racket-variant }}
     steps:
