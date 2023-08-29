@@ -6,4 +6,4 @@
 (define pkg-desc "A wrapper for the LMDB database.")
 (define version "0.2")
 (define pkg-authors '(danielrothfus))
-(define license 'MIT)
+(define license '(MIT AND OLDAP-2.8))
