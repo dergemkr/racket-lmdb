@@ -18,7 +18,8 @@
            racket/format
            racket/function
            racket/os
-           rackunit)
+           rackunit
+           (submod "types.rkt" public))
 
   (define-syntax (with-env stx)
     (syntax-parse stx
@@ -135,8 +136,8 @@
     (define test-value #"value")
 
     (define (check-env path #:flags [flags '()])
-      (with-env (e path #:flags (cons 'MDB_RDONLY flags))
-        (with-txn (x e #f '(MDB_RDONLY))
+      (with-env (e path #:flags (cons 'RDONLY flags))
+        (with-txn (x e #f '(RDONLY))
           (define d (dbi-open x #f '()))
           (check-equal? (get x d test-key) test-value))))
 
@@ -160,13 +161,13 @@
       (define path3 (make-temporary-file "db~a"))
       (define fd3 (open-output-file path3 #:mode 'binary #:exists 'truncate/replace))
       (env-copy e (unsafe-port->file-descriptor fd3))
-      (check-env path3 #:flags '(MDB_NOSUBDIR))
+      (check-env path3 #:flags '(NOSUBDIR))
 
       ;; Copy to fd with flags
       (define path4 (make-temporary-file "db~a"))
       (define fd4 (open-output-file path4 #:mode 'binary #:exists 'truncate/replace))
-      (env-copy e (unsafe-port->file-descriptor fd4) '(MDB_CP_COMPACT))
-      (check-env path4 #:flags '(MDB_NOSUBDIR)))))
+      (env-copy e (unsafe-port->file-descriptor fd4) '(CP_COMPACT))
+      (check-env path4 #:flags '(NOSUBDIR)))))
 
 (deflmdb env-stat
   (_fun _MDB_env-pointer
@@ -191,10 +192,10 @@
     (with-tmp-env (e)
       ;; Check the map size of the envinfo struct.
       (define default-mapsize 1048576)
-      (check-equal? (MDB_envinfo-me_mapsize (env-info e)) default-mapsize)
+      (check-equal? (envinfo-mapsize (env-info e)) default-mapsize)
       (define new-mapsize (* default-mapsize 2))
       (env-set-mapsize e new-mapsize)
-      (check-equal? (MDB_envinfo-me_mapsize (env-info e)) new-mapsize))))
+      (check-equal? (envinfo-mapsize (env-info e)) new-mapsize))))
 
 (deflmdb env-sync
   (_fun _MDB_env-pointer
@@ -213,7 +214,7 @@
       ;; Just creating an empty environment.
       (void))
 
-    (with-env (e path #:flags '(MDB_RDONLY))
+    (with-env (e path #:flags '(RDONLY))
       (define errno-eacces (lookup-errno 'EACCES))
       (define (exn:mdb-eacces? e)
         (and (exn:mdb? e)
@@ -245,11 +246,11 @@
 (module+ test
   (test-case "env-get-flags/env-set-flags"
     (with-tmp-env (e)
-      (check-false (member 'MDB_NOSYNC (env-get-flags e)))
-      (env-set-flags e '(MDB_NOSYNC) #t)
-      (check-not-false (member 'MDB_NOSYNC (env-get-flags e)))
-      (env-set-flags e '(MDB_NOSYNC) #f)
-      (check-false (member 'MDB_NOSYNC (env-get-flags e))))))
+      (check-false (member 'NOSYNC (env-get-flags e)))
+      (env-set-flags e '(NOSYNC) #t)
+      (check-not-false (member 'NOSYNC (env-get-flags e)))
+      (env-set-flags e '(NOSYNC) #f)
+      (check-false (member 'NOSYNC (env-get-flags e))))))
 
 (deflmdb env-get-path
   (_fun _MDB_env-pointer
@@ -442,7 +443,7 @@
 
       (define d1
         (with-txn (x e #f '())
-          (dbi-open x "d1" '(MDB_CREATE))))
+          (dbi-open x "d1" '(CREATE))))
 
       ;; Second open call should fail since we set maxdbs to 1 and d1 is open.
       (with-txn (x e #f '())
@@ -450,14 +451,14 @@
           (and (exn:mdb? e)
                (equal? (exn:mdb-code e) MDB_DBS_FULL)))
         (check-exn exn:mdb-dbs-full?
-                   (thunk (dbi-open x "d2" '(MDB_CREATE)))))
+                   (thunk (dbi-open x "d2" '(CREATE)))))
 
       ;; Close d1 after transaction has finished.
       (dbi-close e d1)
 
       ;; Open call should succeed since we closed d1.
       (with-txn (x e #f '())
-        (define d2 (dbi-open x "d2" '(MDB_CREATE)))
+        (define d2 (dbi-open x "d2" '(CREATE)))
         ;; Just don't want Racket printing value of d2.
         (void)))))
 
@@ -478,26 +479,26 @@
       #:before-open (env-set-maxdbs e 1)
 
       ;; No named DBs in the environment yet
-      (check-equal? (MDB_stat-ms_entries (env-stat e)) 0)
+      (check-equal? (stat-entries (env-stat e)) 0)
 
       (define d
         (with-txn (x e #f '())
-          (dbi-open x "d" '(MDB_CREATE))))
+          (dbi-open x "d" '(CREATE))))
 
       (with-txn (x e #f '())
         (put x d #"key1" #"val1" '()))
 
       (with-txn (x e #f '())
-        (check-equal? (MDB_stat-ms_entries (env-stat e)) 1)
-        (check-equal? (MDB_stat-ms_entries (stat x d)) 1)
+        (check-equal? (stat-entries (env-stat e)) 1)
+        (check-equal? (stat-entries (stat x d)) 1)
         (dbi-drop x d #f))
 
       (with-txn (x e #f '())
-        (check-equal? (MDB_stat-ms_entries (env-stat e)) 1)
-        (check-equal? (MDB_stat-ms_entries (stat x d)) 0)
+        (check-equal? (stat-entries (env-stat e)) 1)
+        (check-equal? (stat-entries (stat x d)) 0)
         (dbi-drop x d #t))
 
-      (check-equal? (MDB_stat-ms_entries (env-stat e)) 0))))
+      (check-equal? (stat-entries (env-stat e)) 0))))
 
 ;; Returns value if found or #f on missing entry rather than raising
 ;; MDB_NOTFOUND.
@@ -620,14 +621,14 @@
           (dbi-open x1 #f '())))
 
       (define c #f)
-      (with-txn (x2 e #f '(MDB_RDONLY))
+      (with-txn (x2 e #f '(RDONLY))
         (set! c (cursor-open x2 d))
         (check-equal? (cursor-dbi c) d)
         (check-equal? (cursor-txn c) x2))
 
       ;; Renew swaps cursor in read-only transaction to new read-only
       ;; transaction, keeping cursor on same database.
-      (with-txn (x3 e #f '(MDB_RDONLY))
+      (with-txn (x3 e #f '(RDONLY))
         (cursor-renew x3 c)
         (check-equal? (cursor-dbi c) d)
         (check-equal? (cursor-txn c) x3)))))
@@ -680,10 +681,10 @@
         (with-cursor (c x d)
           (define kb (box #f))
           (define db (box #f))
-          (check-true (cursor-get c kb db 'MDB_FIRST))
+          (check-true (cursor-get c kb db 'FIRST))
           (check-equal? (unbox kb) #"test")
           (check-equal? (unbox db) #"val1")
-          (check-false (cursor-get c kb db 'MDB_NEXT)))))))
+          (check-false (cursor-get c kb db 'NEXT)))))))
 
 (deflmdb cursor-put
   (_fun _MDB_cursor-pointer
@@ -702,12 +703,12 @@
   (test-case "cursor-put"
     (with-tmp-env (e)
       (with-txn (x e #f '())
-        (define d (dbi-open x #f '(MDB_DUPSORT)))
+        (define d (dbi-open x #f '(DUPSORT)))
 
         (put x d #"test2" #"val2" '())
 
         (with-cursor (c x d)
-          (cursor-get c (box #"test2") (box #f) 'MDB_SET)
+          (cursor-get c (box #"test2") (box #f) 'SET)
           (cursor-put c #"test3" #"val3" '())
           (cursor-put c #"test1" #"val1" '()))
 
@@ -726,14 +727,14 @@
   (test-case "cursor-count"
     (with-tmp-env (e)
       (with-txn (x e #f '())
-        (define d (dbi-open x #f '(MDB_DUPSORT)))
+        (define d (dbi-open x #f '(DUPSORT)))
 
         (put x d #"test1" #"val1" '())
         (put x d #"test2" #"val2" '())
         (put x d #"test3" #"val3" '())
 
         (with-cursor (c x d)
-          (cursor-get c (box #"test2") (box #f) 'MDB_SET)
+          (cursor-get c (box #"test2") (box #f) 'SET)
           (cursor-del c '()))
 
         (check-equal? (get x d #"test1") #"val1")
@@ -753,7 +754,7 @@
   (test-case "cursor-count"
     (with-tmp-env (e)
       (with-txn (x e #f '())
-        (define d (dbi-open x #f '(MDB_DUPSORT)))
+        (define d (dbi-open x #f '(DUPSORT)))
 
         (put x d #"test1" #"val3" '())
         (put x d #"test1" #"val2" '())
@@ -761,7 +762,7 @@
         (put x d #"test2" #"val4" '())
 
         (with-cursor (c x d)
-          (cursor-get c (box #f) (box #f) 'MDB_FIRST)
+          (cursor-get c (box #f) (box #f) 'FIRST)
           (check-equal? (cursor-count c) 3))))))
 
 (deflmdb reader-list
@@ -784,7 +785,7 @@
   (test-case "reader-list"
     (define path (make-temporary-directory "db~a"))
     (with-env (e path)
-      (with-txn (x e #f  '(MDB_RDONLY))
+      (with-txn (x e #f  '(RDONLY))
         (define l (reader-list e))
         (check-true (string-contains? l "pid"))
         (check-true (string-contains? l "thread"))

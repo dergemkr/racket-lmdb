@@ -59,71 +59,74 @@
                               [me_maxreaders _uint]
                               [me_numreaders _uint]))
 
+;; The "MDB_" prefixes have been stripped off of the following constants since,
+;; unlike C, we don't have to export constant integers with globally unique
+;; names. Racket FFI uses symbols for bitmasks and enums instead.
 (define _mdb_env_flags
   (_bitmask `(
-              MDB_FIXEDMAP   = #x1
-              MDB_NOSUBDIR   = #x4000
-              MDB_RDONLY     = #x20000
-              MDB_WRITEMAP   = #x80000
-              MDB_NOMETASYNC = #x40000
-              MDB_NOSYNC     = #x10000
-              MDB_MAPASYNC   = #x100000
-              MDB_NOTLS      = #x200000
-              MDB_NOLOCK     = #x400000
-              MDB_NORDAHEAD  = #x800000
-              MDB_NOMEMINIT  = #x1000000
+              FIXEDMAP   = #x1
+              NOSUBDIR   = #x4000
+              RDONLY     = #x20000
+              WRITEMAP   = #x80000
+              NOMETASYNC = #x40000
+              NOSYNC     = #x10000
+              MAPASYNC   = #x100000
+              NOTLS      = #x200000
+              NOLOCK     = #x400000
+              NORDAHEAD  = #x800000
+              NOMEMINIT  = #x1000000
               )
             _uint))
 
 (define _mdb_db_flags
   (_bitmask '(
-              MDB_REVERSEKEY = #x2
-              MDB_DUPSORT    = #x4
-              MDB_INTEGERKEY = #x8
-              MDB_DUPFIXED   = #x10
-              MDB_INTEGERDUP = #x20
-              MDB_REVERSEDUP = #x40
-              MDB_CREATE     = #x40000
+              REVERSEKEY = #x2
+              DUPSORT    = #x4
+              INTEGERKEY = #x8
+              DUPFIXED   = #x10
+              INTEGERDUP = #x20
+              REVERSEDUP = #x40
+              CREATE     = #x40000
               )
             _uint))
 
 (define _mdb_write_flags
   (_bitmask '(
-              MDB_NOOVERWRITE = #x10
-              MDB_NODUPDATA   = #x20
-              MDB_CURRENT     = #x40
+              NOOVERWRITE = #x10
+              NODUPDATA   = #x20
+              CURRENT     = #x40
               ;; Unsupported since we can't cleanly grant access to raw memory
               ;; locations or mutate them.
               ;;
-              ;; MDB_RESERVE  = #x10000
-              MDB_APPEND      = #x20000
-              MDB_APPENDDUP   = #x40000
+              ;; RESERVE  = #x10000
+              APPEND      = #x20000
+              APPENDDUP   = #x40000
               ;; Unsupported
-              ;; MDB_MULTIPLE    = #x80000
+              ;; MULTIPLE    = #x80000
               )
             _uint))
 
 (define _mdb_copy_flags
-  (_bitmask '(MDB_CP_COMPACT = #x1)))
+  (_bitmask '(CP_COMPACT = #x1)))
 
 (define _MDB_msg_func (_fun _string _pointer -> _int))
 
 (define _MDB_cursor_op
-  (_enum '(MDB_FIRST
-           MDB_FIRST_DUP
-           MDB_GET_BOTH
-           MDB_GET_BOTH_RANGE
-           MDB_GET_CURRENT
-           MDB_GET_MULTIPLE
-           MDB_LAST
-           MDB_LAST_DUP
-           MDB_NEXT
-           MDB_NEXT_DUP
-           MDB_NEXT_MULTIPLE
-           MDB_NEXT_NODUP
-           MDB_PREV
-           MDB_PREV_DUP
-           MDB_PREV_NODUP
-           MDB_SET
-           MDB_SET_KEY
-           MDB_SET_RANGE)))
+  (_enum '(FIRST
+           FIRST_DUP
+           GET_BOTH
+           GET_BOTH_RANGE
+           GET_CURRENT
+           GET_MULTIPLE
+           LAST
+           LAST_DUP
+           NEXT
+           NEXT_DUP
+           NEXT_MULTIPLE
+           NEXT_NODUP
+           PREV
+           PREV_DUP
+           PREV_NODUP
+           SET
+           SET_KEY
+           SET_RANGE)))

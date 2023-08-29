@@ -2,6 +2,11 @@
 
 (provide (all-defined-out))
 
+;; Unlike the enums and bitmasks, we leave the "MDB_" prefix on these error
+;; codes since they're exported symbols and INCOMPATIBLE and PANIC would be
+;; uninformative constant names. At least with the prefix, it's clear that it's
+;; related to this library.
+;;
 ;; Error codes up to date as of 0.9.29/2021-03-16
 (define MDB_SUCCESS 0)
 (define MDB_KEYEXIST -30799)
