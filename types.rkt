@@ -22,7 +22,7 @@
 
                [MDB_envinfo?              envinfo?]
                [MDB_envinfo-me_mapaddr    envinfo-mapaddr]
-               [MDB_envinfo-me_mapsize    envinvo-mapsize]
+               [MDB_envinfo-me_mapsize    envinfo-mapsize]
                [MDB_envinfo-me_last_pgno  envinfo-last-pgno]
                [MDB_envinfo-me_last_txnid envinfo-last-txnid]
                [MDB_envinfo-me_maxreaders envinfo-maxreaders]
