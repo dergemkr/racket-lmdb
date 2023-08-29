@@ -4,6 +4,7 @@
 ;; the LMDB API documentation.
 
 (require ffi/unsafe
+         racket/format
          racket/string
          "errors.rkt"
          "types.rkt"
@@ -52,7 +53,8 @@
 
 (define (check-status s)
   (unless (zero? s)
-    (raise (exn:mdb (format "exn:mdb: ~a" (mdb-strerror s))
+    (raise (exn:mdb (format "exn:mdb: ~a" (or (mdb-strerror s)
+                                              (~a "Error code " s)))
                     (current-continuation-marks)
                     s))))
 
